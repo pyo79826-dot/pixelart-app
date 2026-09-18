@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#0b0d14" />
   <meta name="application-name" content="PixCursor" />
   <meta name="description" content="好きなマウスカーソルをドット絵で簡単に作れるピクセルエディタ" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>PixCursor</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
@@ -15,21 +17,20 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <img src="icon.svg" alt="" />
-        </div>
+        <div class="brand-mark" aria-hidden="true"><img src="icon.svg" alt="" /></div>
         <div>
-          <h1>PixCursor</h1>
+          <h1>PixCursor <span class="version">BETA</span></h1>
           <p>PIXEL CURSOR STUDIO</p>
         </div>
       </div>
 
       <div class="top-actions">
-        <button id="undoBtn" class="btn ghost" title="元に戻す (Ctrl+Z)">↶ Undo</button>
-        <button id="redoBtn" class="btn ghost" title="やり直し (Ctrl+Y)">↷ Redo</button>
-        <button id="saveBtn" class="btn ghost" title="ブラウザに保存">Save</button>
-        <button id="exportPngBtn" class="btn primary">PNG</button>
-        <button id="exportCurBtn" class="btn accent">CUR</button>
+        <span id="saveState" class="save-state"><span></span>AUTO SAVED</span>
+        <button id="newBtn" class="btn ghost" title="新規プロジェクト">New</button>
+        <button id="undoBtn" class="btn icon-btn ghost" title="元に戻す (Ctrl+Z)">↶</button>
+        <button id="redoBtn" class="btn icon-btn ghost" title="やり直し (Ctrl+Y)">↷</button>
+        <button id="installBtn" class="btn ghost install-btn" hidden>Install</button>
+        <button id="exportCurBtn" class="btn accent">CURを書き出す</button>
       </div>
     </header>
 
@@ -37,61 +38,83 @@
       <aside class="left-panel panel">
         <div class="panel-title">
           <span>TOOLS</span>
-          <span class="kbd-hint">右クリック = 消しゴム</span>
+          <span class="kbd-hint">右クリック = 消去</span>
         </div>
 
         <div class="tool-grid" id="toolGrid">
           <button class="tool active" data-tool="pencil" title="ペン (B)">
-            <span class="tool-icon">✎</span><span>ペン</span>
+            <span class="tool-icon">✎</span><span>ペン</span><kbd>B</kbd>
           </button>
           <button class="tool" data-tool="eraser" title="消しゴム (E)">
-            <span class="tool-icon">⌫</span><span>消す</span>
+            <span class="tool-icon">⌫</span><span>消しゴム</span><kbd>E</kbd>
           </button>
           <button class="tool" data-tool="fill" title="塗りつぶし (F)">
-            <span class="tool-icon">▨</span><span>塗る</span>
+            <span class="tool-icon">▨</span><span>塗りつぶし</span><kbd>F</kbd>
           </button>
           <button class="tool" data-tool="eyedropper" title="スポイト (I)">
-            <span class="tool-icon">⌁</span><span>スポイト</span>
+            <span class="tool-icon">⌁</span><span>スポイト</span><kbd>I</kbd>
           </button>
-          <button class="tool wide" data-tool="hotspot" title="クリック位置を設定 (H)">
-            <span class="tool-icon">⌖</span><span>クリック位置</span>
+          <button class="tool" data-tool="line" title="直線 (L)">
+            <span class="tool-icon">╱</span><span>直線</span><kbd>L</kbd>
+          </button>
+          <button class="tool" data-tool="rect" title="四角形 (R)">
+            <span class="tool-icon">□</span><span>四角形</span><kbd>R</kbd>
+          </button>
+          <button class="tool wide" data-tool="hotspot" title="クリック位置 (H)">
+            <span class="tool-icon">⌖</span><span>クリック位置</span><kbd>H</kbd>
           </button>
         </div>
 
         <section class="control-section">
           <label class="section-label" for="colorPicker">COLOR</label>
           <div class="color-row">
-            <input id="colorPicker" type="color" value="#63e6ff" />
-            <input id="hexInput" class="hex-input" value="#63E6FF" maxlength="7" spellcheck="false" />
-            <button id="transparentBtn" class="transparent-swatch" title="透明色"></button>
+            <input id="colorPicker" type="color" value="#63e6ff" aria-label="色を選択" />
+            <input id="hexInput" class="hex-input" value="#63E6FF" maxlength="7" spellcheck="false" aria-label="HEXカラー" />
+            <button id="transparentBtn" class="transparent-swatch" title="透明色" aria-label="透明色"></button>
           </div>
           <div id="palette" class="palette" aria-label="カラーパレット"></div>
+          <div class="recent-wrap">
+            <span>RECENT</span>
+            <div id="recentColors" class="recent-colors"></div>
+          </div>
         </section>
 
         <section class="control-section">
           <label class="section-label" for="sizeSelect">CANVAS</label>
-          <div class="select-row">
-            <select id="sizeSelect">
-              <option value="16">16 × 16</option>
-              <option value="24">24 × 24</option>
-              <option value="32" selected>32 × 32</option>
-              <option value="48">48 × 48</option>
-              <option value="64">64 × 64</option>
-            </select>
-          </div>
+          <select id="sizeSelect">
+            <option value="16">16 × 16</option>
+            <option value="24">24 × 24</option>
+            <option value="32" selected>32 × 32</option>
+            <option value="48">48 × 48</option>
+            <option value="64">64 × 64</option>
+          </select>
+
           <label class="switch-row">
             <input id="gridToggle" type="checkbox" checked />
-            <span class="switch"></span>
-            <span>グリッド表示</span>
+            <span class="switch"></span><span>グリッド表示</span>
           </label>
+
+          <div class="mini-label">MIRROR DRAW</div>
+          <div class="segmented two">
+            <button id="mirrorXBtn" type="button" data-toggle="mirrorX">↔ 左右</button>
+            <button id="mirrorYBtn" type="button" data-toggle="mirrorY">↕ 上下</button>
+          </div>
         </section>
 
         <section class="control-section">
           <div class="section-label row-between">
-            <span>ZOOM</span>
-            <output id="zoomValue">16×</output>
+            <span>ZOOM</span><output id="zoomValue">16×</output>
           </div>
           <input id="zoomRange" type="range" min="6" max="28" value="16" />
+        </section>
+
+        <section class="control-section">
+          <div class="section-label">TRANSFORM</div>
+          <div class="small-action-grid">
+            <button id="flipHBtn" class="small-action">↔ 反転</button>
+            <button id="flipVBtn" class="small-action">↕ 反転</button>
+            <button id="centerBtn" class="small-action wide-action">◎ 絵を中央に寄せる</button>
+          </div>
         </section>
 
         <section class="control-section compact-actions">
@@ -105,9 +128,13 @@
 
       <section class="editor-area">
         <div class="canvas-toolbar">
-          <div>
-            <strong id="canvasLabel">32 × 32</strong>
-            <span id="toolLabel">PENCIL</span>
+          <div class="project-block">
+            <input id="projectNameInput" class="project-name" value="My Cursor" maxlength="40" spellcheck="false" aria-label="プロジェクト名" />
+            <div class="project-meta">
+              <strong id="canvasLabel">32 × 32</strong>
+              <span id="toolLabel">PENCIL</span>
+              <span id="statsLabel">0 px · 0 colors</span>
+            </div>
           </div>
           <div class="cursor-coords">
             <span>PIXEL <b id="coordLabel">--, --</b></span>
@@ -123,11 +150,13 @@
 
         <div class="statusbar">
           <span><kbd>B</kbd> ペン</span>
-          <span><kbd>E</kbd> 消しゴム</span>
+          <span><kbd>E</kbd> 消す</span>
           <span><kbd>F</kbd> 塗り</span>
-          <span><kbd>I</kbd> スポイト</span>
+          <span><kbd>L</kbd> 直線</span>
+          <span><kbd>R</kbd> 四角</span>
           <span><kbd>H</kbd> クリック位置</span>
           <span><kbd>Ctrl Z</kbd> 戻す</span>
+          <span class="status-tip">Tip: 右クリックしながら描くと一時的に消しゴム</span>
         </div>
       </section>
 
@@ -138,32 +167,55 @@
             <span class="live-dot">LIVE</span>
           </div>
 
+          <div class="preview-bg-switch">
+            <span>背景</span>
+            <div class="segmented three" id="previewBgGroup">
+              <button class="active" data-bg="checker">格子</button>
+              <button data-bg="light">白</button>
+              <button data-bg="dark">黒</button>
+            </div>
+          </div>
+
           <div class="preview-list">
             <div class="preview-card">
               <span>16px</span>
-              <div class="preview-checker"><canvas class="preview-canvas" data-size="16"></canvas></div>
+              <div class="preview-checker preview-surface"><canvas class="preview-canvas" data-size="16"></canvas></div>
             </div>
             <div class="preview-card">
               <span>32px</span>
-              <div class="preview-checker"><canvas class="preview-canvas" data-size="32"></canvas></div>
+              <div class="preview-checker preview-surface"><canvas class="preview-canvas" data-size="32"></canvas></div>
             </div>
             <div class="preview-card">
               <span>48px</span>
-              <div class="preview-checker"><canvas class="preview-canvas" data-size="48"></canvas></div>
+              <div class="preview-checker preview-surface"><canvas class="preview-canvas" data-size="48"></canvas></div>
             </div>
           </div>
 
           <div id="cursorPlayground" class="cursor-playground">
             <div class="playground-cross"></div>
             <div>
-              <strong>ここでマウスを動かす</strong>
-              <small>作った画像を実際のカーソルとしてテスト</small>
+              <strong>カーソルテストエリア</strong>
+              <small>ここでマウスを動かして操作感を確認</small>
             </div>
           </div>
 
           <div class="hotspot-note">
             <span class="hotspot-dot"></span>
             赤い点 = クリック判定位置
+          </div>
+        </section>
+
+        <section class="panel export-panel">
+          <div class="panel-title"><span>EXPORT</span><span class="soft-badge">READY</span></div>
+          <div class="export-grid">
+            <button class="export-option" data-png-scale="1"><strong>PNG</strong><span>1× 原寸</span></button>
+            <button class="export-option" data-png-scale="4"><strong>PNG</strong><span>4× 拡大</span></button>
+            <button class="export-option" data-png-scale="8"><strong>PNG</strong><span>8× 拡大</span></button>
+            <button id="exportCurPanelBtn" class="export-option featured"><strong>CUR</strong><span>Windows用</span></button>
+          </div>
+          <div class="project-file-row">
+            <button id="saveProjectBtn">プロジェクト保存</button>
+            <label>プロジェクトを開く<input id="openProjectInput" type="file" accept=".json,.pixcursor,application/json" /></label>
           </div>
         </section>
 
@@ -179,26 +231,28 @@
 
           <div id="chatLog" class="chat-log">
             <div class="message assistant">
-              <p>やあ！まずは好きに描いてみて。<br>「今の絵を診断」でカーソル向けにチェックできるよ。</p>
+              <p>描いたら「今の絵を診断」を押してみて。サイズ・色数・余白・ホットスポットをチェックするよ。</p>
             </div>
           </div>
 
           <div class="quick-prompts">
             <button id="diagnoseBtn">今の絵を診断</button>
             <button data-prompt="小さいサイズでも見やすくしたい">小さくても見やすく</button>
+            <button data-prompt="カーソルの輪郭をきれいにしたい">輪郭のコツ</button>
           </div>
 
           <form id="assistantForm" class="assistant-input">
-            <input id="assistantText" placeholder="例：輪郭どうしたらいい？" autocomplete="off" />
+            <input id="assistantText" placeholder="例：色数は多すぎる？" autocomplete="off" />
             <button type="submit" title="送信">↑</button>
           </form>
-          <p class="assistant-note">現在はローカル版。後で本物のAI接続にアップグレード予定。</p>
+          <p class="assistant-note">今はオフラインガイド版。将来AI接続にアップグレード予定。</p>
         </section>
       </aside>
     </main>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <script src="app.js"></script>
   <script>
     if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
