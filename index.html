@@ -219,6 +219,50 @@
           </div>
         </section>
 
+        <section class="panel bridge-panel">
+          <div class="panel-title">
+            <span>CHATGPT BRIDGE</span>
+            <span class="free-badge">API不要</span>
+          </div>
+
+          <p class="bridge-intro">
+            このアプリから作品データをChatGPTへ渡して、返ってきた編集データをそのまま反映できます。
+          </p>
+
+          <div class="bridge-steps">
+            <div class="bridge-step">
+              <span class="bridge-step-no">1</span>
+              <div>
+                <strong>ChatGPTへ渡す</strong>
+                <small>コピーして、このチャットに貼り付けるだけ</small>
+              </div>
+            </div>
+            <button id="copyChatGPTBtn" class="bridge-main-btn">ChatGPT用データをコピー</button>
+            <button id="downloadChatGPTBtn" class="bridge-sub-btn">ファイルで保存</button>
+
+            <div class="bridge-step">
+              <span class="bridge-step-no">2</span>
+              <div>
+                <strong>返ってきた編集を反映</strong>
+                <small>JSONを貼るか、編集ファイルを読み込む</small>
+              </div>
+            </div>
+            <textarea id="aiEditPaste" class="bridge-textarea" placeholder="ChatGPTが返した pixcursor-ai-edit-v1 のJSONをここに貼り付け"></textarea>
+            <button id="applyAiEditBtn" class="bridge-main-btn purple">AI編集を反映</button>
+            <label class="bridge-sub-btn file-like">編集ファイルを読み込む<input id="aiEditFileInput" type="file" accept=".json,.pixcursor,application/json" /></label>
+          </div>
+
+          <div id="bridgeStatus" class="bridge-status">
+            <span class="bridge-status-dot"></span>
+            <span>現在の作品と同期済み</span>
+          </div>
+
+          <details class="bridge-help">
+            <summary>使い方</summary>
+            <p>①「ChatGPT用データをコピー」→ ②このチャットに貼り付けて「○○風にして」など依頼 → ③返ってきたJSONを貼って「AI編集を反映」。OpenAI APIは使わないため、アプリ側の追加料金はありません。</p>
+          </details>
+        </section>
+
         <section class="panel assistant-panel">
           <div class="assistant-head">
             <div class="assistant-avatar">PX</div>
