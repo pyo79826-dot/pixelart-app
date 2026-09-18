@@ -43,3 +43,18 @@
 - 選択範囲 / 移動
 - アニメーションカーソル (.ani)
 - 複数カーソルをまとめたテーマ書き出し
+
+
+## ChatGPT Bridge（API不要）
+
+PixCursorには、OpenAI APIを使わずにこのChatGPTと作品をやり取りするための **ChatGPT Bridge** があります。
+
+1. PixCursorで「ChatGPT用データをコピー」
+2. ChatGPTのチャットへ貼り付け、やってほしい編集を伝える
+3. ChatGPTが返した `pixcursor-ai-edit-v1` JSONをPixCursorへ貼る
+4. 「AI編集を反映」を押す
+
+ファイルでやり取りしたい場合は `.pixchat.json` の書き出しとAI編集JSONの読込にも対応しています。
+編集前の作品にはfingerprintが付くため、古い作品向けの編集を誤って適用しそうな場合は警告します。
+
+この方法はPixCursorからOpenAI APIを呼び出さないため、アプリ側でAPIキーやAPI利用料金は不要です。
