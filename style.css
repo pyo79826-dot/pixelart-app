@@ -70,27 +70,20 @@ button { color: inherit; }
 }
 
 .brand-mark {
-  width: 38px;
-  height: 38px;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
-  padding: 5px;
-  border: 1px solid rgba(100, 230, 255, .4);
-  background: rgba(100, 230, 255, .08);
-  box-shadow: inset 0 0 16px rgba(100, 230, 255, .08);
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 22px rgba(100, 230, 255, .16);
 }
 
-.brand-mark span {
-  background: var(--cyan);
-  opacity: .16;
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
 }
-
-.brand-mark span:nth-child(1),
-.brand-mark span:nth-child(2),
-.brand-mark span:nth-child(4),
-.brand-mark span:nth-child(5),
-.brand-mark span:nth-child(9) { opacity: .95; }
 
 .top-actions {
   display: flex;
