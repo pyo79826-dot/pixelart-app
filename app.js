@@ -1,25 +1,9 @@
 (() => {
   "use strict";
 
-  const canvas = document.getElementById("pixelCanvas");
+  const $ = (id) => document.getElementById(id);
+  const canvas = $("pixelCanvas");
   const ctx = canvas.getContext("2d");
-  const canvasStage = document.getElementById("canvasStage");
-  const colorPicker = document.getElementById("colorPicker");
-  const hexInput = document.getElementById("hexInput");
-  const paletteEl = document.getElementById("palette");
-  const sizeSelect = document.getElementById("sizeSelect");
-  const zoomRange = document.getElementById("zoomRange");
-  const zoomValue = document.getElementById("zoomValue");
-  const gridToggle = document.getElementById("gridToggle");
-  const toolLabel = document.getElementById("toolLabel");
-  const canvasLabel = document.getElementById("canvasLabel");
-  const coordLabel = document.getElementById("coordLabel");
-  const hotspotLabel = document.getElementById("hotspotLabel");
-  const cursorPlayground = document.getElementById("cursorPlayground");
-  const toast = document.getElementById("toast");
-  const importInput = document.getElementById("importInput");
-  const chatLog = document.getElementById("chatLog");
-  const assistantText = document.getElementById("assistantText");
 
   const DEFAULT_PALETTE = [
     "#0B0D14", "#252A36", "#596176", "#EEF2FF", "#FFFFFF", "#63E6FF",
@@ -32,24 +16,39 @@
     eraser: "ERASER",
     fill: "FILL",
     eyedropper: "EYEDROPPER",
+    line: "LINE",
+    rect: "RECTANGLE",
     hotspot: "HOTSPOT"
   };
 
   const state = {
+    name: "My Cursor",
     size: 32,
     zoom: 16,
     color: "#63E6FF",
     transparentInk: false,
     tool: "pencil",
     showGrid: true,
+    mirrorX: false,
+    mirrorY: false,
     pixels: [],
     hotspot: { x: 0, y: 0 },
+    previewBg: "checker",
+    recentColors: [],
     drawing: false,
     lastCell: null,
+    dragStart: null,
+    shapeBase: null,
+    shapeErase: false,
     actionChanged: false,
+    historyPushed: false,
     undo: [],
     redo: []
   };
+
+  let installPrompt = null;
+  let toastTimer = null;
+  let saveTimer = null;
 
   function emptyPixels(size) {
     return new Array(size * size).fill(null);
@@ -57,6 +56,7 @@
 
   function cloneSnapshot() {
     return {
+      name: state.name,
       size: state.size,
       pixels: state.pixels.slice(),
       hotspot: { x: state.hotspot.x, y: state.hotspot.y }
@@ -64,10 +64,12 @@
   }
 
   function applySnapshot(snapshot) {
+    state.name = snapshot.name || state.name;
     state.size = snapshot.size;
     state.pixels = snapshot.pixels.slice();
     state.hotspot = { x: snapshot.hotspot.x, y: snapshot.hotspot.y };
-    sizeSelect.value = String(state.size);
+    $("sizeSelect").value = String(state.size);
+    $("projectNameInput").value = state.name;
     updateCanvasDimensions();
     render();
     persist();
@@ -75,7 +77,7 @@
 
   function pushHistory() {
     state.undo.push(cloneSnapshot());
-    if (state.undo.length > 80) state.undo.shift();
+    if (state.undo.length > 100) state.undo.shift();
     state.redo.length = 0;
     updateUndoButtons();
   }
@@ -95,8 +97,8 @@
   }
 
   function updateUndoButtons() {
-    document.getElementById("undoBtn").disabled = state.undo.length === 0;
-    document.getElementById("redoBtn").disabled = state.redo.length === 0;
+    $("undoBtn").disabled = state.undo.length === 0;
+    $("redoBtn").disabled = state.redo.length === 0;
   }
 
   function updateCanvasDimensions() {
@@ -105,14 +107,13 @@
     canvas.height = side;
     canvas.style.width = side + "px";
     canvas.style.height = side + "px";
-    canvasLabel.textContent = state.size + " × " + state.size;
-    zoomValue.textContent = state.zoom + "×";
-    hotspotLabel.textContent = state.hotspot.x + ", " + state.hotspot.y;
+    $("canvasLabel").textContent = state.size + " × " + state.size;
+    $("zoomValue").textContent = state.zoom + "×";
+    $("hotspotLabel").textContent = state.hotspot.x + ", " + state.hotspot.y;
   }
 
   function drawCheckerCell(x, y, cell) {
-    const light = ((x + y) & 1) === 0;
-    ctx.fillStyle = light ? "#e8e9ed" : "#c7cad0";
+    ctx.fillStyle = ((x + y) & 1) === 0 ? "#e8e9ed" : "#c7cad0";
     ctx.fillRect(x * cell, y * cell, cell, cell);
   }
 
@@ -146,6 +147,7 @@
     }
 
     drawHotspotOverlay();
+    updateStats();
     updatePreviews();
   }
 
@@ -155,7 +157,6 @@
     const y = state.hotspot.y * cell;
     ctx.save();
     ctx.strokeStyle = "#FF4263";
-    ctx.fillStyle = "#FF4263";
     ctx.lineWidth = Math.max(1.5, cell * .1);
     ctx.beginPath();
     ctx.arc(x + cell / 2, y + cell / 2, Math.max(2.5, cell * .18), 0, Math.PI * 2);
@@ -167,6 +168,11 @@
     ctx.lineTo(x + cell - 1, y + cell / 2);
     ctx.stroke();
     ctx.restore();
+  }
+
+  function updateStats() {
+    const used = state.pixels.filter(Boolean);
+    $("statsLabel").textContent = used.length + " px · " + new Set(used).size + " colors";
   }
 
   function renderRawCanvas(sizePx) {
@@ -181,6 +187,7 @@
     base.height = state.size;
     const b = base.getContext("2d");
     b.clearRect(0, 0, state.size, state.size);
+
     for (let y = 0; y < state.size; y++) {
       for (let x = 0; x < state.size; x++) {
         const value = state.pixels[y * state.size + x];
@@ -190,14 +197,12 @@
         }
       }
     }
-
     o.drawImage(base, 0, 0, sizePx, sizePx);
     return out;
   }
 
   function updatePreviews() {
-    const previews = document.querySelectorAll(".preview-canvas");
-    previews.forEach(function (preview) {
+    document.querySelectorAll(".preview-canvas").forEach((preview) => {
       const size = Number(preview.dataset.size);
       preview.width = size;
       preview.height = size;
@@ -214,9 +219,14 @@
       pctx.fillRect(Math.max(0, hx - 1), Math.max(0, hy - 1), 2, 2);
     });
 
+    document.querySelectorAll(".preview-surface").forEach((surface) => {
+      surface.classList.remove("light", "dark");
+      if (state.previewBg !== "checker") surface.classList.add(state.previewBg);
+    });
+
     const raw = renderRawCanvas(state.size);
     const url = raw.toDataURL("image/png");
-    cursorPlayground.style.cursor =
+    $("cursorPlayground").style.cursor =
       'url("' + url + '") ' + state.hotspot.x + " " + state.hotspot.y + ", crosshair";
   }
 
@@ -225,14 +235,38 @@
     const x = Math.floor(((event.clientX - rect.left) / rect.width) * state.size);
     const y = Math.floor(((event.clientY - rect.top) / rect.height) * state.size);
     if (x < 0 || y < 0 || x >= state.size || y >= state.size) return null;
-    return { x: x, y: y };
+    return { x, y };
   }
 
-  function setPixel(x, y, value) {
+  function setPixelRaw(x, y, value) {
+    if (x < 0 || y < 0 || x >= state.size || y >= state.size) return false;
     const index = y * state.size + x;
     if (state.pixels[index] === value) return false;
     state.pixels[index] = value;
     return true;
+  }
+
+  function symmetricCells(x, y) {
+    const cells = [[x, y]];
+    if (state.mirrorX) cells.push([state.size - 1 - x, y]);
+    if (state.mirrorY) cells.push([x, state.size - 1 - y]);
+    if (state.mirrorX && state.mirrorY) cells.push([state.size - 1 - x, state.size - 1 - y]);
+
+    const seen = new Set();
+    return cells.filter(([cx, cy]) => {
+      const key = cx + ":" + cy;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function setPixelWithMirror(x, y, value) {
+    let changed = false;
+    symmetricCells(x, y).forEach(([cx, cy]) => {
+      if (setPixelRaw(cx, cy, value)) changed = true;
+    });
+    return changed;
   }
 
   function currentInk() {
@@ -242,10 +276,10 @@
   function paintCell(cell, eraseOverride) {
     const erase = eraseOverride || state.tool === "eraser";
     const value = erase ? null : currentInk();
-    if (setPixel(cell.x, cell.y, value)) state.actionChanged = true;
+    if (setPixelWithMirror(cell.x, cell.y, value)) state.actionChanged = true;
   }
 
-  function drawLineCells(from, to, eraseOverride) {
+  function traceLine(from, to, callback) {
     let x0 = from.x;
     let y0 = from.y;
     const x1 = to.x;
@@ -257,7 +291,7 @@
     let err = dx + dy;
 
     while (true) {
-      paintCell({ x: x0, y: y0 }, eraseOverride);
+      callback(x0, y0);
       if (x0 === x1 && y0 === y1) break;
       const e2 = 2 * err;
       if (e2 >= dy) {
@@ -268,6 +302,28 @@
         err += dx;
         y0 += sy;
       }
+    }
+  }
+
+  function drawLineCells(from, to, value) {
+    traceLine(from, to, (x, y) => {
+      if (setPixelWithMirror(x, y, value)) state.actionChanged = true;
+    });
+  }
+
+  function drawRectCells(from, to, value) {
+    const left = Math.min(from.x, to.x);
+    const right = Math.max(from.x, to.x);
+    const top = Math.min(from.y, to.y);
+    const bottom = Math.max(from.y, to.y);
+
+    for (let x = left; x <= right; x++) {
+      if (setPixelWithMirror(x, top, value)) state.actionChanged = true;
+      if (setPixelWithMirror(x, bottom, value)) state.actionChanged = true;
+    }
+    for (let y = top + 1; y < bottom; y++) {
+      if (setPixelWithMirror(left, y, value)) state.actionChanged = true;
+      if (setPixelWithMirror(right, y, value)) state.actionChanged = true;
     }
   }
 
@@ -308,6 +364,7 @@
     }
     state.transparentInk = false;
     state.color = value;
+    rememberColor(value);
     syncColorUI();
     showToast(value + " を取得");
   }
@@ -315,35 +372,51 @@
   function setHotspot(cell) {
     if (state.hotspot.x === cell.x && state.hotspot.y === cell.y) return false;
     state.hotspot = { x: cell.x, y: cell.y };
-    hotspotLabel.textContent = cell.x + ", " + cell.y;
+    $("hotspotLabel").textContent = cell.x + ", " + cell.y;
     return true;
+  }
+
+  function beginHistoryAction() {
+    pushHistory();
+    state.historyPushed = true;
+    state.actionChanged = false;
   }
 
   function pointerDown(event) {
     if (event.button !== 0 && event.button !== 2) return;
     const cell = getCellFromEvent(event);
     if (!cell) return;
+
     event.preventDefault();
     canvas.setPointerCapture(event.pointerId);
-
     state.drawing = true;
     state.lastCell = cell;
+    state.dragStart = cell;
+    state.shapeBase = null;
+    state.shapeErase = event.button === 2;
     state.actionChanged = false;
+    state.historyPushed = false;
+
     const eraseOverride = event.button === 2;
 
     if (state.tool === "pencil" || state.tool === "eraser" || eraseOverride) {
-      pushHistory();
+      beginHistoryAction();
       paintCell(cell, eraseOverride);
       render();
       return;
     }
 
+    if (state.tool === "line" || state.tool === "rect") {
+      beginHistoryAction();
+      state.shapeBase = state.pixels.slice();
+      renderShape(cell);
+      return;
+    }
+
     if (state.tool === "fill") {
-      pushHistory();
+      beginHistoryAction();
       state.actionChanged = floodFill(cell, currentInk());
-      if (!state.actionChanged) state.undo.pop();
       render();
-      updateUndoButtons();
       finishAction();
       return;
     }
@@ -355,78 +428,130 @@
     }
 
     if (state.tool === "hotspot") {
-      pushHistory();
+      beginHistoryAction();
       state.actionChanged = setHotspot(cell);
-      if (!state.actionChanged) state.undo.pop();
       render();
-      updateUndoButtons();
       finishAction();
     }
   }
 
+  function renderShape(cell) {
+    if (!state.shapeBase || !state.dragStart) return;
+    state.pixels = state.shapeBase.slice();
+    state.actionChanged = false;
+    const value = state.shapeErase ? null : currentInk();
+
+    if (state.tool === "line") drawLineCells(state.dragStart, cell, value);
+    if (state.tool === "rect") drawRectCells(state.dragStart, cell, value);
+    render();
+  }
+
   function pointerMove(event) {
     const cell = getCellFromEvent(event);
-    coordLabel.textContent = cell ? cell.x + ", " + cell.y : "--, --";
+    $("coordLabel").textContent = cell ? cell.x + ", " + cell.y : "--, --";
     if (!state.drawing || !cell) return;
 
     const eraseOverride = (event.buttons & 2) === 2;
     if (state.tool === "pencil" || state.tool === "eraser" || eraseOverride) {
       if (!state.lastCell) state.lastCell = cell;
-      drawLineCells(state.lastCell, cell, eraseOverride);
+      traceLine(state.lastCell, cell, (x, y) => paintCell({ x, y }, eraseOverride));
       state.lastCell = cell;
       render();
+      return;
     }
+
+    if (state.tool === "line" || state.tool === "rect") renderShape(cell);
   }
 
   function finishAction() {
-    if (state.actionChanged) persist();
+    if (state.historyPushed && !state.actionChanged) {
+      state.undo.pop();
+      updateUndoButtons();
+    } else if (state.actionChanged) {
+      if (!state.transparentInk) rememberColor(state.color);
+      persist();
+    }
+
     state.drawing = false;
     state.lastCell = null;
+    state.dragStart = null;
+    state.shapeBase = null;
     state.actionChanged = false;
+    state.historyPushed = false;
   }
 
   function setTool(tool) {
     state.tool = tool;
-    document.querySelectorAll(".tool").forEach(function (button) {
+    document.querySelectorAll(".tool").forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === tool);
     });
-    toolLabel.textContent = TOOL_NAMES[tool];
+    $("toolLabel").textContent = TOOL_NAMES[tool];
   }
 
   function normalizeHex(value) {
-    let v = String(value || "").trim().toUpperCase();
+    const v = String(value || "").trim().toUpperCase();
     if (/^#[0-9A-F]{6}$/.test(v)) return v;
     if (/^[0-9A-F]{6}$/.test(v)) return "#" + v;
     return null;
   }
 
+  function rememberColor(color) {
+    const normalized = normalizeHex(color);
+    if (!normalized) return;
+    state.recentColors = [normalized, ...state.recentColors.filter((c) => c !== normalized)].slice(0, 6);
+    renderRecentColors();
+  }
+
   function syncColorUI() {
-    colorPicker.value = state.color;
-    hexInput.value = state.transparentInk ? "TRANSP." : state.color;
-    document.querySelectorAll(".swatch").forEach(function (swatch) {
+    $("colorPicker").value = state.color;
+    $("hexInput").value = state.transparentInk ? "TRANSP." : state.color;
+
+    document.querySelectorAll(".swatch").forEach((swatch) => {
       swatch.classList.toggle("selected", !state.transparentInk && swatch.dataset.color === state.color);
     });
-    document.getElementById("transparentBtn").style.outline =
-      state.transparentInk ? "2px solid #ffffff" : "none";
+
+    $("transparentBtn").style.outline = state.transparentInk ? "2px solid #ffffff" : "none";
   }
 
   function buildPalette() {
-    paletteEl.innerHTML = "";
-    DEFAULT_PALETTE.forEach(function (color) {
+    const palette = $("palette");
+    palette.innerHTML = "";
+
+    DEFAULT_PALETTE.forEach((color) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "swatch";
       button.dataset.color = color;
       button.style.background = color;
       button.title = color;
-      button.addEventListener("click", function () {
+      button.addEventListener("click", () => {
+        state.color = color;
+        state.transparentInk = false;
+        rememberColor(color);
+        syncColorUI();
+      });
+      palette.appendChild(button);
+    });
+
+    syncColorUI();
+    renderRecentColors();
+  }
+
+  function renderRecentColors() {
+    const wrap = $("recentColors");
+    wrap.innerHTML = "";
+    state.recentColors.forEach((color) => {
+      const button = document.createElement("button");
+      button.className = "recent-color";
+      button.style.background = color;
+      button.title = color;
+      button.addEventListener("click", () => {
         state.color = color;
         state.transparentInk = false;
         syncColorUI();
       });
-      paletteEl.appendChild(button);
+      wrap.appendChild(button);
     });
-    syncColorUI();
   }
 
   function resizeCanvas(newSize) {
@@ -453,13 +578,122 @@
     persist();
   }
 
+  function transformPixels(mapper) {
+    pushHistory();
+    const next = emptyPixels(state.size);
+    for (let y = 0; y < state.size; y++) {
+      for (let x = 0; x < state.size; x++) {
+        const value = state.pixels[y * state.size + x];
+        if (!value) continue;
+        const [nx, ny] = mapper(x, y);
+        next[ny * state.size + nx] = value;
+      }
+    }
+    state.pixels = next;
+    render();
+    persist();
+  }
+
+  function flipHorizontal() {
+    transformPixels((x, y) => [state.size - 1 - x, y]);
+    state.hotspot.x = state.size - 1 - state.hotspot.x;
+    render();
+    persist();
+  }
+
+  function flipVertical() {
+    transformPixels((x, y) => [x, state.size - 1 - y]);
+    state.hotspot.y = state.size - 1 - state.hotspot.y;
+    render();
+    persist();
+  }
+
+  function centerArtwork() {
+    let minX = state.size, minY = state.size, maxX = -1, maxY = -1;
+    for (let y = 0; y < state.size; y++) {
+      for (let x = 0; x < state.size; x++) {
+        if (!state.pixels[y * state.size + x]) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+
+    if (maxX < 0) {
+      showToast("中央に寄せる絵がありません");
+      return;
+    }
+
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const targetX = Math.floor((state.size - width) / 2);
+    const targetY = Math.floor((state.size - height) / 2);
+    const dx = targetX - minX;
+    const dy = targetY - minY;
+    if (dx === 0 && dy === 0) {
+      showToast("すでに中央です");
+      return;
+    }
+
+    pushHistory();
+    const next = emptyPixels(state.size);
+    for (let y = 0; y < state.size; y++) {
+      for (let x = 0; x < state.size; x++) {
+        const value = state.pixels[y * state.size + x];
+        if (!value) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < state.size && ny < state.size) {
+          next[ny * state.size + nx] = value;
+        }
+      }
+    }
+    state.pixels = next;
+    state.hotspot.x = Math.max(0, Math.min(state.size - 1, state.hotspot.x + dx));
+    state.hotspot.y = Math.max(0, Math.min(state.size - 1, state.hotspot.y + dy));
+    render();
+    persist();
+    showToast("絵を中央に寄せました");
+  }
+
   function clearCanvas() {
     if (!state.pixels.some(Boolean)) return;
+    if (!confirm("キャンバスを全消去しますか？")) return;
     pushHistory();
     state.pixels = emptyPixels(state.size);
     render();
     persist();
     showToast("キャンバスをクリアしました");
+  }
+
+  function newProject() {
+    const hasWork = state.pixels.some(Boolean);
+    if (hasWork && !confirm("新しいプロジェクトを作りますか？ 現在の絵は自動保存から置き換わります。")) return;
+    pushHistory();
+    state.name = "My Cursor";
+    state.size = 32;
+    state.pixels = emptyPixels(32);
+    state.hotspot = { x: 0, y: 0 };
+    state.mirrorX = false;
+    state.mirrorY = false;
+    $("projectNameInput").value = state.name;
+    $("sizeSelect").value = "32";
+    $("mirrorXBtn").classList.remove("active");
+    $("mirrorYBtn").classList.remove("active");
+    updateCanvasDimensions();
+    render();
+    persist();
+    showToast("新しいキャンバスを作りました");
+  }
+
+  function sanitizeName(name) {
+    const cleaned = String(name || "pixcursor")
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, "-")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+    return cleaned || "pixcursor";
   }
 
   function downloadBlob(blob, filename) {
@@ -470,24 +704,23 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function exportPng(scale) {
     const side = state.size * scale;
     const out = renderRawCanvas(side);
-    out.toBlob(function (blob) {
+    out.toBlob((blob) => {
       if (!blob) return;
-      downloadBlob(blob, "pixel-cursor-" + state.size + "x" + state.size + (scale > 1 ? "-x" + scale : "") + ".png");
-      showToast("PNGを書き出しました");
+      const suffix = scale > 1 ? "-" + scale + "x" : "";
+      downloadBlob(blob, sanitizeName(state.name) + "-" + state.size + "px" + suffix + ".png");
+      showToast("PNG " + scale + "× を書き出しました");
     }, "image/png");
   }
 
   async function exportCur() {
     const raw = renderRawCanvas(state.size);
-    const pngBlob = await new Promise(function (resolve) {
-      raw.toBlob(resolve, "image/png");
-    });
+    const pngBlob = await new Promise((resolve) => raw.toBlob(resolve, "image/png"));
     if (!pngBlob) return;
 
     const png = new Uint8Array(await pngBlob.arrayBuffer());
@@ -508,15 +741,67 @@
     view.setUint32(18, headerSize, true);
     out.set(png, headerSize);
 
-    downloadBlob(new Blob([out], { type: "application/octet-stream" }), "pixel-cursor.cur");
+    downloadBlob(new Blob([out], { type: "application/octet-stream" }), sanitizeName(state.name) + ".cur");
     showToast("Windowsカーソル (.cur) を書き出しました");
+  }
+
+  function exportProject() {
+    const payload = {
+      format: "pixcursor-project",
+      version: 2,
+      name: state.name,
+      size: state.size,
+      pixels: state.pixels,
+      hotspot: state.hotspot,
+      color: state.color,
+      recentColors: state.recentColors
+    };
+    downloadBlob(
+      new Blob([JSON.stringify(payload)], { type: "application/json" }),
+      sanitizeName(state.name) + ".pixcursor.json"
+    );
+    showToast("プロジェクトを保存しました");
+  }
+
+  async function importProject(file) {
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed || ![16,24,32,48,64].includes(parsed.size)) throw new Error("size");
+      if (!Array.isArray(parsed.pixels) || parsed.pixels.length !== parsed.size * parsed.size) throw new Error("pixels");
+
+      pushHistory();
+      state.name = String(parsed.name || "Imported Cursor").slice(0, 40);
+      state.size = parsed.size;
+      state.pixels = parsed.pixels.map((v) => normalizeHex(v) || null);
+      state.hotspot = {
+        x: Math.max(0, Math.min(state.size - 1, Number(parsed.hotspot?.x) || 0)),
+        y: Math.max(0, Math.min(state.size - 1, Number(parsed.hotspot?.y) || 0))
+      };
+      state.color = normalizeHex(parsed.color) || state.color;
+      state.recentColors = Array.isArray(parsed.recentColors)
+        ? parsed.recentColors.map(normalizeHex).filter(Boolean).slice(0, 6)
+        : state.recentColors;
+
+      $("projectNameInput").value = state.name;
+      $("sizeSelect").value = String(state.size);
+      updateCanvasDimensions();
+      syncColorUI();
+      renderRecentColors();
+      render();
+      persist();
+      showToast("プロジェクトを開きました");
+    } catch (error) {
+      showToast("このプロジェクトファイルは開けません");
+    }
   }
 
   function importImage(file) {
     if (!file) return;
     const image = new Image();
     const url = URL.createObjectURL(file);
-    image.onload = function () {
+
+    image.onload = () => {
       pushHistory();
       const temp = document.createElement("canvas");
       temp.width = state.size;
@@ -540,31 +825,47 @@
         const b = data[i * 4 + 2];
         const a = data[i * 4 + 3];
         if (a < 40) continue;
-        next[i] = "#" + [r, g, b].map(function (v) {
-          return v.toString(16).padStart(2, "0");
-        }).join("").toUpperCase();
+        next[i] = "#" + [r,g,b].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase();
       }
+
       state.pixels = next;
       URL.revokeObjectURL(url);
       render();
       persist();
       showToast("画像をドット化して読み込みました");
     };
-    image.onerror = function () {
+
+    image.onerror = () => {
       URL.revokeObjectURL(url);
       showToast("画像を読み込めませんでした");
     };
+
     image.src = url;
+  }
+
+  function markSaving() {
+    const el = $("saveState");
+    el.classList.add("saving");
+    el.lastChild.textContent = "SAVING";
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      el.classList.remove("saving");
+      el.lastChild.textContent = "AUTO SAVED";
+    }, 450);
   }
 
   function persist() {
     const payload = {
+      version: 2,
+      name: state.name,
       size: state.size,
       pixels: state.pixels,
       hotspot: state.hotspot,
-      color: state.color
+      color: state.color,
+      recentColors: state.recentColors
     };
     localStorage.setItem("pixelCursorLabProject", JSON.stringify(payload));
+    markSaving();
   }
 
   function loadPersisted() {
@@ -572,27 +873,32 @@
       const raw = localStorage.getItem("pixelCursorLabProject");
       if (!raw) return false;
       const saved = JSON.parse(raw);
-      if (![16, 24, 32, 48, 64].includes(saved.size)) return false;
+      if (![16,24,32,48,64].includes(saved.size)) return false;
       if (!Array.isArray(saved.pixels) || saved.pixels.length !== saved.size * saved.size) return false;
+
+      state.name = String(saved.name || "My Cursor").slice(0, 40);
       state.size = saved.size;
       state.pixels = saved.pixels;
       state.hotspot = saved.hotspot || { x: 0, y: 0 };
       state.color = normalizeHex(saved.color) || state.color;
-      sizeSelect.value = String(state.size);
+      state.recentColors = Array.isArray(saved.recentColors)
+        ? saved.recentColors.map(normalizeHex).filter(Boolean).slice(0, 6)
+        : [];
+
+      $("sizeSelect").value = String(state.size);
+      $("projectNameInput").value = state.name;
       return true;
     } catch (error) {
       return false;
     }
   }
 
-  let toastTimer = null;
   function showToast(message) {
+    const toast = $("toast");
     toast.textContent = message;
     toast.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () {
-      toast.classList.remove("show");
-    }, 1800);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
   }
 
   function addChat(role, text) {
@@ -601,19 +907,20 @@
     const p = document.createElement("p");
     p.textContent = text;
     wrap.appendChild(p);
-    chatLog.appendChild(wrap);
-    chatLog.scrollTop = chatLog.scrollHeight;
+    $("chatLog").appendChild(wrap);
+    $("chatLog").scrollTop = $("chatLog").scrollHeight;
   }
 
   function analyzeArt() {
     const used = state.pixels.filter(Boolean);
     if (!used.length) {
-      return "まだ何も描かれていないよ。まずは外形を1色で作って、16pxプレビューで読める形か確認してみよう。";
+      return "まだ何も描かれていないよ。まず大きなシルエットを1色で作って、16pxプレビューで形が読めるか確認してみよう。";
     }
 
     const colors = new Set(used);
     let minX = state.size, minY = state.size, maxX = -1, maxY = -1;
     let edgePixels = 0;
+    let isolated = 0;
 
     for (let y = 0; y < state.size; y++) {
       for (let x = 0; x < state.size; x++) {
@@ -623,6 +930,14 @@
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
         if (x === 0 || y === 0 || x === state.size - 1 || y === state.size - 1) edgePixels++;
+
+        const neighbors = [
+          x > 0 && state.pixels[y * state.size + x - 1],
+          x < state.size - 1 && state.pixels[y * state.size + x + 1],
+          y > 0 && state.pixels[(y - 1) * state.size + x],
+          y < state.size - 1 && state.pixels[(y + 1) * state.size + x]
+        ];
+        if (!neighbors.some(Boolean)) isolated++;
       }
     }
 
@@ -631,15 +946,19 @@
     const height = maxY - minY + 1;
     const notes = [];
 
-    notes.push("使用色 " + colors.size + "色・塗り " + fillRate + "%・絵の範囲 " + width + "×" + height + "px。");
-    if (colors.size > 10) notes.push("カーソルとしては色数が多め。小サイズでは5〜8色くらいまで整理すると形が読みやすいよ。");
-    else notes.push("色数はカーソル向けに扱いやすい範囲。");
+    notes.push("使用色 " + colors.size + "色、" + used.length + "px、占有率 " + fillRate + "%、範囲 " + width + "×" + height + "px。");
 
-    if (edgePixels > 0) notes.push("端に触れているピクセルがあるので、1px余白を作ると切れて見えにくい。");
-    else notes.push("外周に余白があって安全。");
+    if (colors.size > 10) notes.push("小さいカーソルとしては色数が多め。5〜8色くらいに整理すると読みやすくなりやすいよ。");
+    else if (colors.size <= 2) notes.push("色数はかなりシンプル。輪郭とハイライトを1色ずつ足す余地がありそう。");
+    else notes.push("色数は扱いやすい範囲。");
+
+    if (edgePixels > 0) notes.push("外周に触れているピクセルがあるので、必要なら1px余白を作ると安全。");
+    else notes.push("外周には余白がある。");
+
+    if (isolated >= 3) notes.push("孤立した1pxが " + isolated + " 個あるので、意図しないノイズがないか確認してみて。");
 
     const hs = state.pixels[state.hotspot.y * state.size + state.hotspot.x];
-    if (!hs) notes.push("クリック位置が透明部分にあるよ。意図した場所ならOKだけど、先端に合わせると操作感が分かりやすい。");
+    if (!hs) notes.push("クリック位置は透明部分。先端や中心など、実際にクリックさせたい位置か確認してね。");
 
     return notes.join(" ");
   }
@@ -647,123 +966,160 @@
   function assistantReply(text) {
     const q = text.toLowerCase();
 
-    if (q.includes("診断") || q.includes("チェック")) return analyzeArt();
-    if (q.includes("輪郭")) return "輪郭は1px幅を基本にして、外側を暗色・内側を明色にすると小さいサイズでも形が残りやすいよ。曲線は 1→1→2px の階段を意識するとドット感がきれい。";
-    if (q.includes("色") || q.includes("カラー")) return "まず基準色、暗い輪郭色、明るいハイライト色の3段階を作るのがおすすめ。似た色を増やしすぎない方が16〜32pxでは強いよ。";
-    if (q.includes("小さ") || q.includes("見やす") || q.includes("見え")) return "16pxプレビューを基準に確認してみて。細い突起は1px以上、重要なシルエットは2〜3pxの塊を残すと潰れにくいよ。";
-    if (q.includes("透明")) return "背景は透明のままでOK。カーソルの外周に半透明は使わず、完全透明か不透明に寄せると輪郭がシャープに見えやすいよ。";
-    if (q.includes("カーソル") || q.includes("クリック")) return "「クリック位置」ツールで赤いマークを先端に置いてね。矢印なら左上の先端、照準なら中心など、操作したい位置に合わせるのが大事。";
-    if (q.includes("ドット")) return "アンチエイリアスを描かず、ピクセルの階段を意識するとドット絵らしくなるよ。斜線は 1-1-1 や 1-2-1 のように規則を揃えるときれい。";
-    if (q.includes("影") || q.includes("立体")) return "光源を左上など1方向に決めて、反対側に暗色を置いてみて。32pxカーソルなら影色は1段階だけでも十分立体感が出るよ。";
+    if (q.includes("診断") || q.includes("チェック") || q.includes("どう")) return analyzeArt();
+    if (q.includes("輪郭")) return "輪郭は1px幅を基本にして、外側を暗色・内側を明色にすると小さくしても形が残りやすいよ。曲線は 1→1→2px のように階段のリズムを揃えるときれい。";
+    if (q.includes("色") || q.includes("カラー")) return "32px前後なら、基準色・暗い輪郭・影・ハイライトの4〜6色くらいから始めると調整しやすいよ。";
+    if (q.includes("小さ") || q.includes("見やす") || q.includes("見え")) return "まず16pxプレビューを見るのがおすすめ。重要な形は2〜3pxの塊を残し、細い飾りは1pxでも途切れないようにすると読みやすいよ。";
+    if (q.includes("透明")) return "背景は完全透明のままでOK。輪郭の外側に中途半端な半透明を置かない方が、Windows上ではシャープに見えやすいよ。";
+    if (q.includes("カーソル") || q.includes("クリック")) return "「クリック位置」ツールで赤いマークを操作の基準点に置いてね。矢印なら先端、照準なら中心が基本。";
+    if (q.includes("ドット")) return "アンチエイリアスを使わず、斜線の階段幅を揃えるとドット感が強くなるよ。左右対称ならMIRROR DRAWも便利。";
+    if (q.includes("影") || q.includes("立体")) return "光源を左上など1方向に固定して、反対側に1段暗い色を置くと少ない色数でも立体感が出るよ。";
 
-    return "その方向なら、まずシルエット → 輪郭 → 3〜6色くらいで陰影、の順に作ると崩れにくいよ。必要なら「今の絵を診断」も押してみて！";
+    return "カーソルは『小さくしたときに形が一瞬で読めるか』が大事。まず16pxプレビューで確認して、必要なら「今の絵を診断」を押してみて。";
   }
 
   function handleAssistantSubmit(text) {
     const value = String(text || "").trim();
     if (!value) return;
     addChat("user", value);
-    setTimeout(function () {
-      addChat("assistant", assistantReply(value));
-    }, 180);
+    setTimeout(() => addChat("assistant", assistantReply(value)), 150);
   }
 
-  document.querySelectorAll(".tool").forEach(function (button) {
-    button.addEventListener("click", function () {
-      setTool(button.dataset.tool);
-    });
+  document.querySelectorAll(".tool").forEach((button) => {
+    button.addEventListener("click", () => setTool(button.dataset.tool));
   });
 
-  colorPicker.addEventListener("input", function () {
-    state.color = colorPicker.value.toUpperCase();
+  $("colorPicker").addEventListener("input", () => {
+    state.color = $("colorPicker").value.toUpperCase();
     state.transparentInk = false;
+    rememberColor(state.color);
     syncColorUI();
   });
 
-  hexInput.addEventListener("change", function () {
-    const color = normalizeHex(hexInput.value);
+  $("hexInput").addEventListener("change", () => {
+    const color = normalizeHex($("hexInput").value);
     if (!color) {
       syncColorUI();
       return;
     }
     state.color = color;
     state.transparentInk = false;
+    rememberColor(color);
     syncColorUI();
   });
 
-  document.getElementById("transparentBtn").addEventListener("click", function () {
+  $("transparentBtn").addEventListener("click", () => {
     state.transparentInk = true;
     syncColorUI();
   });
 
-  sizeSelect.addEventListener("change", function () {
-    resizeCanvas(sizeSelect.value);
-  });
+  $("sizeSelect").addEventListener("change", () => resizeCanvas($("sizeSelect").value));
 
-  zoomRange.addEventListener("input", function () {
-    state.zoom = Number(zoomRange.value);
+  $("zoomRange").addEventListener("input", () => {
+    state.zoom = Number($("zoomRange").value);
     updateCanvasDimensions();
     render();
   });
 
-  gridToggle.addEventListener("change", function () {
-    state.showGrid = gridToggle.checked;
+  $("gridToggle").addEventListener("change", () => {
+    state.showGrid = $("gridToggle").checked;
     render();
+  });
+
+  $("mirrorXBtn").addEventListener("click", () => {
+    state.mirrorX = !state.mirrorX;
+    $("mirrorXBtn").classList.toggle("active", state.mirrorX);
+  });
+
+  $("mirrorYBtn").addEventListener("click", () => {
+    state.mirrorY = !state.mirrorY;
+    $("mirrorYBtn").classList.toggle("active", state.mirrorY);
   });
 
   canvas.addEventListener("pointerdown", pointerDown);
   canvas.addEventListener("pointermove", pointerMove);
   canvas.addEventListener("pointerup", finishAction);
   canvas.addEventListener("pointercancel", finishAction);
-  canvas.addEventListener("pointerleave", function () {
-    coordLabel.textContent = "--, --";
-  });
-  canvas.addEventListener("contextmenu", function (event) {
-    event.preventDefault();
+  canvas.addEventListener("pointerleave", () => { $("coordLabel").textContent = "--, --"; });
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+
+  $("undoBtn").addEventListener("click", undo);
+  $("redoBtn").addEventListener("click", redo);
+  $("newBtn").addEventListener("click", newProject);
+  $("clearBtn").addEventListener("click", clearCanvas);
+  $("flipHBtn").addEventListener("click", flipHorizontal);
+  $("flipVBtn").addEventListener("click", flipVertical);
+  $("centerBtn").addEventListener("click", centerArtwork);
+  $("exportCurBtn").addEventListener("click", exportCur);
+  $("exportCurPanelBtn").addEventListener("click", exportCur);
+  $("saveProjectBtn").addEventListener("click", exportProject);
+
+  document.querySelectorAll("[data-png-scale]").forEach((button) => {
+    button.addEventListener("click", () => exportPng(Number(button.dataset.pngScale)));
   });
 
-  document.getElementById("undoBtn").addEventListener("click", undo);
-  document.getElementById("redoBtn").addEventListener("click", redo);
-  document.getElementById("clearBtn").addEventListener("click", clearCanvas);
-  document.getElementById("saveBtn").addEventListener("click", function () {
+  $("importInput").addEventListener("change", () => {
+    importImage($("importInput").files && $("importInput").files[0]);
+    $("importInput").value = "";
+  });
+
+  $("openProjectInput").addEventListener("change", () => {
+    importProject($("openProjectInput").files && $("openProjectInput").files[0]);
+    $("openProjectInput").value = "";
+  });
+
+  $("projectNameInput").addEventListener("input", () => {
+    state.name = $("projectNameInput").value.slice(0, 40);
     persist();
-    showToast("ブラウザに保存しました");
-  });
-  document.getElementById("exportPngBtn").addEventListener("click", function () {
-    exportPng(1);
-  });
-  document.getElementById("exportCurBtn").addEventListener("click", exportCur);
-
-  importInput.addEventListener("change", function () {
-    importImage(importInput.files && importInput.files[0]);
-    importInput.value = "";
   });
 
-  document.getElementById("diagnoseBtn").addEventListener("click", function () {
-    addChat("assistant", analyzeArt());
-  });
-
-  document.querySelectorAll("[data-prompt]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      handleAssistantSubmit(button.dataset.prompt);
+  $("previewBgGroup").querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.previewBg = button.dataset.bg;
+      $("previewBgGroup").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === button));
+      updatePreviews();
     });
   });
 
-  document.getElementById("assistantForm").addEventListener("submit", function (event) {
+  $("diagnoseBtn").addEventListener("click", () => addChat("assistant", analyzeArt()));
+
+  document.querySelectorAll("[data-prompt]").forEach((button) => {
+    button.addEventListener("click", () => handleAssistantSubmit(button.dataset.prompt));
+  });
+
+  $("assistantForm").addEventListener("submit", (event) => {
     event.preventDefault();
-    const text = assistantText.value;
-    assistantText.value = "";
+    const text = $("assistantText").value;
+    $("assistantText").value = "";
     handleAssistantSubmit(text);
   });
 
-  document.addEventListener("keydown", function (event) {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    installPrompt = event;
+    $("installBtn").hidden = false;
+  });
+
+  $("installBtn").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    $("installBtn").hidden = true;
+  });
+
+  window.addEventListener("appinstalled", () => {
+    $("installBtn").hidden = true;
+    showToast("PixCursorをインストールしました");
+  });
+
+  document.addEventListener("keydown", (event) => {
     if (event.target && /input|select|textarea/i.test(event.target.tagName)) return;
     const key = event.key.toLowerCase();
 
     if ((event.ctrlKey || event.metaKey) && key === "z") {
       event.preventDefault();
-      if (event.shiftKey) redo();
-      else undo();
+      event.shiftKey ? redo() : undo();
       return;
     }
     if ((event.ctrlKey || event.metaKey) && key === "y") {
@@ -776,6 +1132,8 @@
     if (key === "e") setTool("eraser");
     if (key === "f") setTool("fill");
     if (key === "i") setTool("eyedropper");
+    if (key === "l") setTool("line");
+    if (key === "r") setTool("rect");
     if (key === "h") setTool("hotspot");
   });
 
@@ -786,8 +1144,9 @@
   updateUndoButtons();
   render();
 
-  requestAnimationFrame(function () {
-    canvasStage.scrollLeft = Math.max(0, (canvasStage.scrollWidth - canvasStage.clientWidth) / 2);
-    canvasStage.scrollTop = Math.max(0, (canvasStage.scrollHeight - canvasStage.clientHeight) / 2);
+  requestAnimationFrame(() => {
+    const stage = $("canvasStage");
+    stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2);
+    stage.scrollTop = Math.max(0, (stage.scrollHeight - stage.clientHeight) / 2);
   });
 })();
