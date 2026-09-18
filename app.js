@@ -399,7 +399,7 @@
 
     const eraseOverride = event.button === 2;
 
-    if (state.tool === "pencil" || state.tool === "eraser" || eraseOverride) {
+    if (state.tool === "pencil" || state.tool === "eraser") {
       beginHistoryAction();
       paintCell(cell, eraseOverride);
       render();
@@ -415,7 +415,7 @@
 
     if (state.tool === "fill") {
       beginHistoryAction();
-      state.actionChanged = floodFill(cell, currentInk());
+      state.actionChanged = floodFill(cell, eraseOverride ? null : currentInk());
       render();
       finishAction();
       return;
@@ -452,7 +452,7 @@
     if (!state.drawing || !cell) return;
 
     const eraseOverride = (event.buttons & 2) === 2;
-    if (state.tool === "pencil" || state.tool === "eraser" || eraseOverride) {
+    if (state.tool === "pencil" || state.tool === "eraser") {
       if (!state.lastCell) state.lastCell = cell;
       traceLine(state.lastCell, cell, (x, y) => paintCell({ x, y }, eraseOverride));
       state.lastCell = cell;
