@@ -745,6 +745,231 @@
     showToast("Windowsカーソル (.cur) を書き出しました");
   }
 
+
+  function projectFingerprint() {
+    let hash = 2166136261;
+    const source = state.size + "|" + state.hotspot.x + "," + state.hotspot.y + "|" +
+      state.pixels.map((v) => v || "-").join(",");
+    for (let i = 0; i < source.length; i++) {
+      hash ^= source.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0").toUpperCase();
+  }
+
+  function getSparsePixels() {
+    const pixels = [];
+    for (let y = 0; y < state.size; y++) {
+      for (let x = 0; x < state.size; x++) {
+        const color = state.pixels[y * state.size + x];
+        if (color) pixels.push({ x, y, color });
+      }
+    }
+    return pixels;
+  }
+
+  function buildChatGPTBridgePackage() {
+    const sparsePixels = getSparsePixels();
+    const usedColors = [...new Set(sparsePixels.map((p) => p.color))];
+
+    return {
+      format: "pixcursor-chat-bridge-v1",
+      app: "PixCursor",
+      project: {
+        name: state.name,
+        size: state.size,
+        hotspot: { x: state.hotspot.x, y: state.hotspot.y },
+        fingerprint: projectFingerprint(),
+        pixels: sparsePixels,
+        palette: usedColors,
+        stats: {
+          paintedPixels: sparsePixels.length,
+          colorCount: usedColors.length
+        }
+      },
+      instructions_for_chatgpt: {
+        purpose: "Edit this PixCursor project according to the user's request.",
+        coordinate_system: "x=0 is left, y=0 is top. Coordinates are integer pixels.",
+        transparency: "Use null as color to erase a pixel.",
+        output_rule: "Return exactly one JSON object using the pixcursor-ai-edit-v1 schema. No markdown is required.",
+        preferred_mode: "Use mode='patch' for small edits. Use mode='replace' when redesigning most of the cursor.",
+        schema: {
+          format: "pixcursor-ai-edit-v1",
+          baseFingerprint: "Copy project.fingerprint from this package.",
+          baseSize: "Copy project.size from this package.",
+          mode: "patch or replace",
+          name: "optional new project name",
+          hotspot: { x: "optional integer", y: "optional integer" },
+          ops: [
+            { x: "integer", y: "integer", color: "#RRGGBB or null" }
+          ],
+          summary: "optional short Japanese summary"
+        }
+      }
+    };
+  }
+
+  function buildChatGPTClipboardText() {
+    const pkg = buildChatGPTBridgePackage();
+    return [
+      "PixCursorの作品データです。",
+      "このデータを読み取り、私がこのあと書く要望に合わせて編集してください。",
+      "返答はデータ内の instructions_for_chatgpt にある pixcursor-ai-edit-v1 形式のJSONにしてください。",
+      "",
+      JSON.stringify(pkg)
+    ].join("\n");
+  }
+
+  async function copyForChatGPT() {
+    const text = buildChatGPTClipboardText();
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast("ChatGPT用データをコピーしました");
+      setBridgeStatus("ChatGPTに貼り付けできます", false);
+    } catch (error) {
+      $("aiEditPaste").value = text;
+      $("aiEditPaste").focus();
+      $("aiEditPaste").select();
+      showToast("下の欄にデータを入れました。コピーしてください");
+    }
+  }
+
+  function downloadChatGPTPackage() {
+    const payload = buildChatGPTBridgePackage();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    downloadBlob(blob, sanitizeName(state.name) + ".pixchat.json");
+    showToast("ChatGPT用ファイルを保存しました");
+  }
+
+  function extractJsonObject(text) {
+    const raw = String(text || "").trim();
+    if (!raw) throw new Error("empty");
+
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      const fenced = raw.match(/\`\`\`(?:json)?\s*([\s\S]*?)\`\`\`/i);
+      if (fenced) return JSON.parse(fenced[1].trim());
+
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start >= 0 && end > start) return JSON.parse(raw.slice(start, end + 1));
+      throw error;
+    }
+  }
+
+  function validateAiEdit(edit) {
+    if (!edit || edit.format !== "pixcursor-ai-edit-v1") {
+      throw new Error("format");
+    }
+    if (!["patch", "replace"].includes(edit.mode)) {
+      throw new Error("mode");
+    }
+    if (Number(edit.baseSize) !== state.size) {
+      throw new Error("size");
+    }
+    if (!Array.isArray(edit.ops)) {
+      throw new Error("ops");
+    }
+    if (edit.ops.length > state.size * state.size * 2) {
+      throw new Error("too_many_ops");
+    }
+
+    const normalizedOps = edit.ops.map((op) => {
+      const x = Number(op && op.x);
+      const y = Number(op && op.y);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.size || y >= state.size) {
+        throw new Error("coordinate");
+      }
+      const color = op.color === null ? null : normalizeHex(op.color);
+      if (op.color !== null && !color) throw new Error("color");
+      return { x, y, color };
+    });
+
+    return { ...edit, ops: normalizedOps };
+  }
+
+  function applyAiEditObject(rawEdit) {
+    const edit = validateAiEdit(rawEdit);
+    const currentFingerprint = projectFingerprint();
+
+    if (edit.baseFingerprint && edit.baseFingerprint !== currentFingerprint) {
+      const proceed = confirm(
+        "このAI編集は、現在のキャンバスとは別の状態を元に作られています。\\n" +
+        "それでも反映しますか？"
+      );
+      if (!proceed) return;
+    }
+
+    pushHistory();
+
+    if (edit.mode === "replace") {
+      state.pixels = emptyPixels(state.size);
+    }
+
+    edit.ops.forEach((op) => {
+      state.pixels[op.y * state.size + op.x] = op.color;
+    });
+
+    if (edit.hotspot && Number.isInteger(Number(edit.hotspot.x)) && Number.isInteger(Number(edit.hotspot.y))) {
+      state.hotspot = {
+        x: Math.max(0, Math.min(state.size - 1, Number(edit.hotspot.x))),
+        y: Math.max(0, Math.min(state.size - 1, Number(edit.hotspot.y)))
+      };
+    }
+
+    if (typeof edit.name === "string" && edit.name.trim()) {
+      state.name = edit.name.trim().slice(0, 40);
+      $("projectNameInput").value = state.name;
+    }
+
+    render();
+    persist();
+    $("aiEditPaste").value = "";
+    const summary = typeof edit.summary === "string" && edit.summary.trim()
+      ? edit.summary.trim()
+      : edit.ops.length + "ピクセルのAI編集を反映しました";
+    showToast("AI編集を反映しました");
+    setBridgeStatus(summary, false);
+  }
+
+  function applyAiEditFromText(text) {
+    try {
+      const parsed = extractJsonObject(text);
+      applyAiEditObject(parsed);
+    } catch (error) {
+      const messages = {
+        empty: "編集データが空です",
+        format: "PixCursor用のAI編集データではありません",
+        mode: "AI編集のmodeが不正です",
+        size: "キャンバスサイズが現在の作品と違います",
+        ops: "AI編集にピクセル操作がありません",
+        coordinate: "範囲外のピクセル座標があります",
+        color: "不正なカラーコードがあります",
+        too_many_ops: "編集データが大きすぎます"
+      };
+      showToast(messages[error.message] || "AI編集データを読み取れませんでした");
+      setBridgeStatus("編集データを確認してください", true);
+    }
+  }
+
+  async function importAiEditFile(file) {
+    if (!file) return;
+    try {
+      applyAiEditFromText(await file.text());
+    } catch (error) {
+      showToast("編集ファイルを開けませんでした");
+    }
+  }
+
+  function setBridgeStatus(message, warn) {
+    const el = $("bridgeStatus");
+    if (!el) return;
+    el.classList.toggle("warn", Boolean(warn));
+    const textEl = el.querySelector("span:last-child");
+    if (textEl) textEl.textContent = message;
+  }
+
   function exportProject() {
     const payload = {
       format: "pixcursor-project",
@@ -866,6 +1091,7 @@
     };
     localStorage.setItem("pixelCursorLabProject", JSON.stringify(payload));
     markSaving();
+    if ($("bridgeStatus")) setBridgeStatus("現在の作品と同期済み", false);
   }
 
   function loadPersisted() {
@@ -1053,6 +1279,14 @@
   $("exportCurBtn").addEventListener("click", exportCur);
   $("exportCurPanelBtn").addEventListener("click", exportCur);
   $("saveProjectBtn").addEventListener("click", exportProject);
+
+  $("copyChatGPTBtn").addEventListener("click", copyForChatGPT);
+  $("downloadChatGPTBtn").addEventListener("click", downloadChatGPTPackage);
+  $("applyAiEditBtn").addEventListener("click", () => applyAiEditFromText($("aiEditPaste").value));
+  $("aiEditFileInput").addEventListener("change", () => {
+    importAiEditFile($("aiEditFileInput").files && $("aiEditFileInput").files[0]);
+    $("aiEditFileInput").value = "";
+  });
 
   document.querySelectorAll("[data-png-scale]").forEach((button) => {
     button.addEventListener("click", () => exportPng(Number(button.dataset.pngScale)));
