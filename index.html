@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0d14" />
+  <title>Pixel Cursor Lab</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+          <span></span><span></span><span></span>
+          <span></span><span></span><span></span>
+        </div>
+        <div>
+          <h1>Pixel Cursor Lab</h1>
+          <p>マウスカーソル特化ドット絵エディタ</p>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button id="undoBtn" class="btn ghost" title="元に戻す (Ctrl+Z)">↶ Undo</button>
+        <button id="redoBtn" class="btn ghost" title="やり直し (Ctrl+Y)">↷ Redo</button>
+        <button id="saveBtn" class="btn ghost" title="ブラウザに保存">Save</button>
+        <button id="exportPngBtn" class="btn primary">PNG</button>
+        <button id="exportCurBtn" class="btn accent">CUR</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="left-panel panel">
+        <div class="panel-title">
+          <span>TOOLS</span>
+          <span class="kbd-hint">右クリック = 消しゴム</span>
+        </div>
+
+        <div class="tool-grid" id="toolGrid">
+          <button class="tool active" data-tool="pencil" title="ペン (B)">
+            <span class="tool-icon">✎</span><span>ペン</span>
+          </button>
+          <button class="tool" data-tool="eraser" title="消しゴム (E)">
+            <span class="tool-icon">⌫</span><span>消す</span>
+          </button>
+          <button class="tool" data-tool="fill" title="塗りつぶし (F)">
+            <span class="tool-icon">▨</span><span>塗る</span>
+          </button>
+          <button class="tool" data-tool="eyedropper" title="スポイト (I)">
+            <span class="tool-icon">⌁</span><span>スポイト</span>
+          </button>
+          <button class="tool wide" data-tool="hotspot" title="クリック位置を設定 (H)">
+            <span class="tool-icon">⌖</span><span>クリック位置</span>
+          </button>
+        </div>
+
+        <section class="control-section">
+          <label class="section-label" for="colorPicker">COLOR</label>
+          <div class="color-row">
+            <input id="colorPicker" type="color" value="#63e6ff" />
+            <input id="hexInput" class="hex-input" value="#63E6FF" maxlength="7" spellcheck="false" />
+            <button id="transparentBtn" class="transparent-swatch" title="透明色"></button>
+          </div>
+          <div id="palette" class="palette" aria-label="カラーパレット"></div>
+        </section>
+
+        <section class="control-section">
+          <label class="section-label" for="sizeSelect">CANVAS</label>
+          <div class="select-row">
+            <select id="sizeSelect">
+              <option value="16">16 × 16</option>
+              <option value="24">24 × 24</option>
+              <option value="32" selected>32 × 32</option>
+              <option value="48">48 × 48</option>
+              <option value="64">64 × 64</option>
+            </select>
+          </div>
+          <label class="switch-row">
+            <input id="gridToggle" type="checkbox" checked />
+            <span class="switch"></span>
+            <span>グリッド表示</span>
+          </label>
+        </section>
+
+        <section class="control-section">
+          <div class="section-label row-between">
+            <span>ZOOM</span>
+            <output id="zoomValue">16×</output>
+          </div>
+          <input id="zoomRange" type="range" min="6" max="28" value="16" />
+        </section>
+
+        <section class="control-section compact-actions">
+          <button id="clearBtn" class="btn danger ghost">全消去</button>
+          <label class="btn ghost file-btn">
+            画像を読込
+            <input id="importInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+          </label>
+        </section>
+      </aside>
+
+      <section class="editor-area">
+        <div class="canvas-toolbar">
+          <div>
+            <strong id="canvasLabel">32 × 32</strong>
+            <span id="toolLabel">PENCIL</span>
+          </div>
+          <div class="cursor-coords">
+            <span>PIXEL <b id="coordLabel">--, --</b></span>
+            <span>HOTSPOT <b id="hotspotLabel">0, 0</b></span>
+          </div>
+        </div>
+
+        <div class="canvas-stage" id="canvasStage">
+          <div class="checkerboard">
+            <canvas id="pixelCanvas" width="512" height="512"></canvas>
+          </div>
+        </div>
+
+        <div class="statusbar">
+          <span><kbd>B</kbd> ペン</span>
+          <span><kbd>E</kbd> 消しゴム</span>
+          <span><kbd>F</kbd> 塗り</span>
+          <span><kbd>I</kbd> スポイト</span>
+          <span><kbd>H</kbd> クリック位置</span>
+          <span><kbd>Ctrl Z</kbd> 戻す</span>
+        </div>
+      </section>
+
+      <aside class="right-panel">
+        <section class="panel preview-panel">
+          <div class="panel-title">
+            <span>CURSOR PREVIEW</span>
+            <span class="live-dot">LIVE</span>
+          </div>
+
+          <div class="preview-list">
+            <div class="preview-card">
+              <span>16px</span>
+              <div class="preview-checker"><canvas class="preview-canvas" data-size="16"></canvas></div>
+            </div>
+            <div class="preview-card">
+              <span>32px</span>
+              <div class="preview-checker"><canvas class="preview-canvas" data-size="32"></canvas></div>
+            </div>
+            <div class="preview-card">
+              <span>48px</span>
+              <div class="preview-checker"><canvas class="preview-canvas" data-size="48"></canvas></div>
+            </div>
+          </div>
+
+          <div id="cursorPlayground" class="cursor-playground">
+            <div class="playground-cross"></div>
+            <div>
+              <strong>ここでマウスを動かす</strong>
+              <small>作った画像を実際のカーソルとしてテスト</small>
+            </div>
+          </div>
+
+          <div class="hotspot-note">
+            <span class="hotspot-dot"></span>
+            赤い点 = クリック判定位置
+          </div>
+        </section>
+
+        <section class="panel assistant-panel">
+          <div class="assistant-head">
+            <div class="assistant-avatar">PX</div>
+            <div>
+              <strong>Pixel Assistant</strong>
+              <small>カーソル制作サポート</small>
+            </div>
+            <span class="local-badge">LOCAL</span>
+          </div>
+
+          <div id="chatLog" class="chat-log">
+            <div class="message assistant">
+              <p>やあ！まずは好きに描いてみて。<br>「今の絵を診断」でカーソル向けにチェックできるよ。</p>
+            </div>
+          </div>
+
+          <div class="quick-prompts">
+            <button id="diagnoseBtn">今の絵を診断</button>
+            <button data-prompt="小さいサイズでも見やすくしたい">小さくても見やすく</button>
+          </div>
+
+          <form id="assistantForm" class="assistant-input">
+            <input id="assistantText" placeholder="例：輪郭どうしたらいい？" autocomplete="off" />
+            <button type="submit" title="送信">↑</button>
+          </form>
+          <p class="assistant-note">現在はローカル版。後で本物のAI接続にアップグレード予定。</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
