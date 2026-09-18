@@ -440,7 +440,7 @@ kbd {
 }
 
 .right-panel { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.preview-panel, .export-panel { padding: 14px; }
+.preview-panel, .export-panel, .bridge-panel { padding: 14px; }
 
 .live-dot { color: var(--green); font-size: 8px; letter-spacing: .08em; }
 .live-dot::before {
@@ -584,6 +584,111 @@ kbd {
 }
 .assistant-note { margin: 7px 0 0; font-size: 7px; text-align: center; color: #566076; }
 
+
+/* ChatGPT Bridge */
+.bridge-panel { padding: 14px; }
+.free-badge {
+  font-size: 7px;
+  color: #71f0c1;
+  border: 1px solid rgba(113,240,193,.32);
+  background: rgba(113,240,193,.06);
+  border-radius: 4px;
+  padding: 3px 5px;
+}
+.bridge-intro {
+  margin: 8px 0 10px;
+  color: #8894aa;
+  font-size: 9px;
+  line-height: 1.55;
+}
+.bridge-steps { display: grid; gap: 7px; }
+.bridge-step {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.bridge-step-no {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: 7px;
+  background: rgba(100,230,255,.08);
+  border: 1px solid rgba(100,230,255,.22);
+  color: var(--cyan);
+  font-size: 9px;
+  font-weight: 900;
+}
+.bridge-step strong { display: block; font-size: 9px; }
+.bridge-step small { display: block; margin-top: 2px; color: #667187; font-size: 7px; }
+.bridge-main-btn, .bridge-sub-btn {
+  min-height: 34px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
+}
+.bridge-main-btn {
+  border: 1px solid rgba(100,230,255,.32);
+  background: rgba(100,230,255,.10);
+  color: #c8f7ff;
+}
+.bridge-main-btn:hover {
+  border-color: rgba(100,230,255,.65);
+  background: rgba(100,230,255,.14);
+}
+.bridge-main-btn.purple {
+  border-color: rgba(154,124,255,.4);
+  background: linear-gradient(135deg, rgba(154,124,255,.16), rgba(108,166,255,.10));
+  color: #d9d0ff;
+}
+.bridge-sub-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #2c3445;
+  background: transparent;
+  color: #79859b;
+}
+.bridge-sub-btn:hover { color: #c9d1df; border-color: #46506a; }
+.file-like input { display: none; }
+.bridge-textarea {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  border-radius: 7px;
+  border: 1px solid #2c3445;
+  background: #0b0f17;
+  color: #cbd4e4;
+  padding: 8px;
+  outline: none;
+  font: 8px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.bridge-textarea:focus { border-color: rgba(154,124,255,.55); }
+.bridge-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: #69758a;
+  font-size: 7px;
+}
+.bridge-status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(101,239,189,.55);
+}
+.bridge-status.warn .bridge-status-dot {
+  background: #ffd166;
+  box-shadow: 0 0 8px rgba(255,209,102,.45);
+}
+.bridge-help { margin-top: 8px; color: #657187; font-size: 8px; }
+.bridge-help summary { cursor: pointer; color: #8894aa; }
+.bridge-help p { margin: 6px 0 0; line-height: 1.55; }
+
 .toast {
   position: fixed;
   bottom: 18px; left: 50%;
@@ -599,7 +704,7 @@ kbd {
 
 @media (max-width: 1160px) {
   .workspace { grid-template-columns: 205px minmax(420px, 1fr); }
-  .right-panel { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; }
+  .right-panel { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .assistant-panel { min-height: 310px; }
 }
 
