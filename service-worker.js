@@ -1,4 +1,4 @@
-const CACHE_NAME = "pixcursor-v3";
+const CACHE_NAME = "pixcursor-v4";
 const ASSETS = [
   "./",
   "./index.html",
