@@ -4,7 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b0d14" />
-  <title>Pixel Cursor Lab</title>
+  <meta name="application-name" content="PixCursor" />
+  <meta name="description" content="好きなマウスカーソルをドット絵で簡単に作れるピクセルエディタ" />
+  <title>PixCursor</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -12,13 +16,11 @@
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">
-          <span></span><span></span><span></span>
-          <span></span><span></span><span></span>
-          <span></span><span></span><span></span>
+          <img src="icon.svg" alt="" />
         </div>
         <div>
-          <h1>Pixel Cursor Lab</h1>
-          <p>マウスカーソル特化ドット絵エディタ</p>
+          <h1>PixCursor</h1>
+          <p>PIXEL CURSOR STUDIO</p>
         </div>
       </div>
 
@@ -198,5 +200,10 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js"));
+    }
+  </script>
 </body>
 </html>
